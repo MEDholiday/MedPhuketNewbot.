@@ -1,4 +1,4 @@
-#import logging
+# import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from config import token, chat_id
@@ -8,13 +8,12 @@ import datetime
 import itertools
 import aiogram.utils.executor
 import pytz
-from config import api_id, api_hash
 from keywords import keywords
 from chat_links import chat_links
 
 
 # Set up logging
-#logging.basicConfig(level=logging.DEBUG)
+# logging.basicConfig(level=logging.DEBUG)
 
 # Create the bot and dispatcher objects
 bot = Bot(token=token)
@@ -40,7 +39,9 @@ async def fetch_messages_from_chats(chat_links, keywords):
         # Initialize start time
 
         # Get current date
-        current_date = datetime.date.today()
+        # Get current time and time 12 hours ago
+        now = datetime.datetime.now(pytz.utc)
+        twelve_hours_ago = now - datetime.timedelta(hours=12)
 
         # Iterate over each chat link and fetch messages containing keywords
         for link in chat_links:
@@ -58,14 +59,9 @@ async def fetch_messages_from_chats(chat_links, keywords):
 
                 # Fetch messages containing the keywords in the chat
                 for keyword in keywords:
-
                     async for message in client.search_messages(chat_id, keyword):
-                        # Rest of the code to process each message goes here
-
-                        # Write messages to the worksheet
-                        #for message in messages:
-                        # Check if the message is from today
-                        if message.date.date() == current_date:
+                        # Check if the message date is within the last 12 hours
+                        if twelve_hours_ago <= message.date <= now:
                             date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
 
                             # Get author info
