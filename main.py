@@ -109,63 +109,78 @@ async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retr
     return parsed_messages
 
 
-async def fetch_messages_from_chats_n(chat_links, keywords, hours):
+async def fetch_messages_from_chats_n(chat_links, keywords, hours, retry_attempts=5, retry_delay=2):
     # Create a new Pyrogram client
     client = Client("my_session")
 
     # Log in to the client
     async with client:
-
         parsed_messages = []
+
         # Get current time and time "hours" ago
         now = datetime.datetime.now(pytz.utc)
         time_ago = now - datetime.timedelta(hours=hours)
 
         # Iterate over each chat link and fetch messages containing keywords
         for link in chat_links:
-            try:
-                # Extract the chat username or ID from the link
-                chat_identifier = link.split("/")[-1]
-
-                # Fetch the chat information
+            for attempt in range(retry_attempts):
                 try:
-                    chat = await client.get_chat(chat_identifier)
-                except:
-                    print(f"Skipping chat link: {link}. User is not a member of the chat.")
+                    # Extract the chat username or ID from the link
+                    chat_identifier = link.split("/")[-1]
+
+                    # Fetch the chat information
+                    try:
+                        chat = await client.get_chat(chat_identifier)
+                    except Exception as e:
+                        if 'database is locked' in str(e):
+                            print(
+                                f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{retry_attempts})")
+                            await asyncio.sleep(retry_delay)
+                            continue
+                        else:
+                            print(f"Skipping chat link: {link}. User is not a member of the chat.")
+                            break  # Exit the retry loop for this chat link
+                    chat_id = chat.id
+
+                    # Fetch messages containing the keywords in the chat
+                    for keyword in keywords:
+                        async for message in client.search_messages(chat_id, keyword):
+                            # Check if the message date is within the given range
+                            if time_ago <= message.date <= now:
+                                date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+
+                                # Get author info
+                                author_name, author_link = await get_author_info(client, message.from_user.id)
+
+                                parsed_message = {
+                                    "chat": chat.title,
+                                    "link": link,
+                                    "author": author_name,
+                                    "author_link": author_link,
+                                    "date_time": date_time,
+                                    "keywords_used": [keyword],
+                                    "message_text": message.text,
+                                }
+                                # Проверяем, что текст сообщения не пустой
+                                if parsed_message["message_text"]:
+                                    parsed_messages.append(parsed_message)
+
+                    # Sleep for 2 seconds between iterations
+                    await asyncio.sleep(2)
+
+                except Exception as e:
+                    if 'database is locked' in str(e):
+                        print(
+                            f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{retry_attempts})")
+                        await asyncio.sleep(retry_delay)
+                    else:
+                        print(f"Error processing chat link: {link}")
+                        print(f"Error message: {str(e)}")
                     continue
-                chat_id = chat.id
-
-                # Fetch messages containing the keywords in the chat
-                for keyword in keywords:
-                    async for message in client.search_messages(chat_id, keyword):
-                        # Check if the message date is within the given range
-                        if time_ago <= message.date <= now:
-                            date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
-
-                            # Get author info
-                            author_name, author_link = await get_author_info(client, message.from_user.id)
-
-                            parsed_message = {
-                                "chat": chat.title,
-                                "link": link,
-                                "author": author_name,
-                                "author_link": author_link,
-                                "date_time": date_time,
-                                "keywords_used": [keyword],
-                                "message_text": message.text,
-                            }
-                            # Проверяем, что текст сообщения не пустой
-                            if parsed_message["message_text"]:
-                                parsed_messages.append(parsed_message)
-
-                # Sleep for 2 seconds between iterations
-                await asyncio.sleep(2)
-
-            except Exception as e:
-                print(f"Error processing chat link: {link}")
-                print(f"Error message: {str(e)}")
-                print()
-                continue
+                break  # Exit the retry loop if the operation was successful
+            else:
+                print(
+                    f"Failed to process chat link {link} after {retry_attempts} attempts due to database being locked.")
     return parsed_messages
 
 
