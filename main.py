@@ -91,6 +91,66 @@ async def fetch_messages_from_chats(chat_links, keywords):
     return parsed_messages
 
 
+async def fetch_messages_from_chats_n(chat_links, keywords, hours):
+    # Create a new Pyrogram client
+    client = Client("my_session")
+
+    # Log in to the client
+    async with client:
+
+        parsed_messages = []
+        # Get current time and time "hours" ago
+        now = datetime.datetime.now(pytz.utc)
+        time_ago = now - datetime.timedelta(hours=hours)
+
+        # Iterate over each chat link and fetch messages containing keywords
+        for link in chat_links:
+            try:
+                # Extract the chat username or ID from the link
+                chat_identifier = link.split("/")[-1]
+
+                # Fetch the chat information
+                try:
+                    chat = await client.get_chat(chat_identifier)
+                except:
+                    print(f"Skipping chat link: {link}. User is not a member of the chat.")
+                    continue
+                chat_id = chat.id
+
+                # Fetch messages containing the keywords in the chat
+                for keyword in keywords:
+                    async for message in client.search_messages(chat_id, keyword):
+                        # Check if the message date is within the given range
+                        if time_ago <= message.date <= now:
+                            date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+
+                            # Get author info
+                            author_name, author_link = await get_author_info(client, message.from_user.id)
+
+                            parsed_message = {
+                                "chat": chat.title,
+                                "link": link,
+                                "author": author_name,
+                                "author_link": author_link,
+                                "date_time": date_time,
+                                "keywords_used": [keyword],
+                                "message_text": message.text,
+                            }
+                            # Проверяем, что текст сообщения не пустой
+                            if parsed_message["message_text"]:
+                                parsed_messages.append(parsed_message)
+
+                # Sleep for 2 seconds between iterations
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                print(f"Error processing chat link: {link}")
+                print(f"Error message: {str(e)}")
+                print()
+                continue
+    return parsed_messages
+
+
 async def schedule_fetch_and_forward():
     chat_id = '6885411740'
     while True:
@@ -154,9 +214,15 @@ async def send_message_to_user(chat_id, messages):
 # Handler for the /start command
 @dp.message_handler(commands=['start'])
 async def start_command(message: types.Message):
-    keyboard_markup = types.ReplyKeyboardMarkup(row_width=2, resize_keyboard=True)
+    keyboard_markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     buttons = [
         types.KeyboardButton(text="/fetch_messages"),
+        types.KeyboardButton(text="Last 1 hour"),
+        types.KeyboardButton(text="Last 2 hours"),
+        types.KeyboardButton(text="Last 3 hours"),
+        types.KeyboardButton(text="Last 6 hours"),
+        types.KeyboardButton(text="Last 12 hours"),
+        types.KeyboardButton(text="Last 24 hours"),
         types.KeyboardButton(text="Help"),
     ]
     keyboard_markup.add(*buttons)
@@ -177,6 +243,33 @@ async def fetch_messages_command(message: types.Message):
         await send_message_to_user(message.from_user.id, parsed_messages)
     except Exception as e:
         await bot.send_message(message.from_user.id, f"Error occurred: {str(e)}")
+
+
+@dp.message_handler(lambda message: message.text.startswith("Last "))
+async def fetch_messages_by_time_command(message: types.Message):
+    time_range_map = {
+        "Last 1 hour": 1,
+        "Last 2 hours": 2,
+        "Last 3 hours": 3,
+        "Last 6 hours": 6,
+        "Last 12 hours": 12,
+        "Last 24 hours": 24,
+    }
+    time_range = time_range_map.get(message.text, 12)
+    await fetch_and_send_messages(message.from_user.id, time_range)
+
+
+async def fetch_and_send_messages(chat_id, hours):
+    try:
+        # Add the "Request in progress. Please wait" message here
+        await bot.send_message(chat_id, "Request in progress. Please wait")
+
+        # Call the fetch_messages_from_chats function using await
+        parsed_messages = await fetch_messages_from_chats_n(chat_links, keywords, hours)
+        # Send the result to the user
+        await send_message_to_user(chat_id, parsed_messages)
+    except Exception as e:
+        await bot.send_message(chat_id, f"Error occurred: {str(e)}")
 
 
 # Handler for the "Help" button
