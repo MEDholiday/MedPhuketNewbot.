@@ -3,6 +3,7 @@ import time
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
+
 from config import token, chat_id
 from pyrogram import Client
 import asyncio
@@ -28,6 +29,83 @@ async def get_author_info(client, user_id):
         return f"{user.first_name} {user.last_name} ({user.username})", f"https://t.me/{user.username}"
     except:
         return None, None
+
+
+async def fetch_messages_from_chats_today(chat_links, keywords, max_retries=5, retry_delay=2):
+    # Create a new Pyrogram client
+    client = Client("my_session")
+
+    # Log in to the client
+    async with client:
+        parsed_messages = []
+        # Initialize start time
+
+        # Get current date
+        current_date = datetime.date.today()
+
+        # Iterate over each chat link and fetch messages containing keywords
+        for link in chat_links:
+            try:
+                # Extract the chat username or ID from the link
+                chat_identifier = link.split("/")[-1]
+
+                # Fetch the chat information
+                try:
+                    chat = await client.get_chat(chat_identifier)
+                except Exception:
+                    print(f"Skipping chat link: {link}. User is not a member of the chat.")
+                    continue
+                chat_id = chat.id
+
+                # Fetch messages containing the keywords in the chat
+                for keyword in keywords:
+                    retry_count = 0
+                    while retry_count < max_retries:
+                        try:
+                            async for message in client.search_messages(chat_id, keyword):
+                                # Rest of the code to process each message goes here
+
+                                # Write messages to the worksheet
+                                # for message in messages:
+                                # Check if the message is from today
+                                if message.date.date() == current_date:
+                                    date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+
+                                    # Get author info
+                                    author_name, author_link = await get_author_info(client, message.from_user.id)
+
+                                    # Получение ссылки на сообщение
+                                    message_link = message.link
+
+                                    parsed_message = {
+                                        "chat": chat.title,
+                                        "link": message_link,
+                                        "author": author_name,
+                                        "author_link": author_link,
+                                        "date_time": date_time,
+                                        "keywords_used": [keyword],
+                                        "message_text": message.text,
+                                    }
+                                    # Проверяем, что текст сообщения не пустой
+                                    if parsed_message["message_text"]:
+                                        parsed_messages.append(parsed_message)
+                            break  # Break out of the retry loop if successful
+                        except Exception as db_err:
+                            if 'database is locked' in str(db_err):
+                                retry_count += 1
+                                print(f"Database is locked, retrying {retry_count}/{max_retries}...")
+                                await asyncio.sleep(retry_delay)
+                            else:
+                                raise
+                # Sleep for 2 seconds between iterations
+                await asyncio.sleep(2)
+
+            except Exception as e:
+                print(f"Error processing chat link: {link}")
+                print(f"Error message: {str(e)}")
+                print()
+                continue
+    return parsed_messages
 
 
 async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retry_delay=2):
@@ -109,102 +187,108 @@ async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retr
     return parsed_messages
 
 
+# Основная функция для извлечения сообщений из чатов за последние n часов
 async def fetch_messages_from_chats_n(chat_links, keywords, hours, retry_attempts=5, retry_delay=2):
-    # Create a new Pyrogram client
+    # Создание нового клиента Pyrogram
     client = Client("my_session")
 
-    # Log in to the client
+    # Вход в систему с использованием клиента
     async with client:
         parsed_messages = []
 
-        # Get current time and time "hours" ago
+        # Получение текущего времени и времени "hours" часов назад в UTC
         now = datetime.datetime.now(pytz.utc)
         time_ago = now - datetime.timedelta(hours=hours)
 
-        # Iterate over each chat link and fetch messages containing keywords
+        # Итерация по каждой ссылке чата и извлечение сообщений, содержащих ключевые слова
         for link in chat_links:
             for attempt in range(retry_attempts):
                 try:
-                    # Extract the chat username or ID from the link
+                    # Извлечение имени пользователя или ID чата из ссылки
                     chat_identifier = link.split("/")[-1]
 
-                    # Fetch the chat information
+                    # Получение информации о чате
                     try:
                         chat = await client.get_chat(chat_identifier)
                     except Exception as e:
                         if 'database is locked' in str(e):
                             print(
-                                f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{retry_attempts})")
+                                f"База данных заблокирована, повторная попытка через {retry_delay} секунд... (Попытка {attempt + 1}/{retry_attempts})")
                             await asyncio.sleep(retry_delay)
                             continue
                         else:
-                            print(f"Skipping chat link: {link}. User is not a member of the chat.")
-                            break  # Exit the retry loop for this chat link
+                            print(f"Пропуск ссылки на чат: {link}. Пользователь не является участником чата.")
+                            break  # Выход из цикла повторных попыток для этой ссылки чата
                     chat_id = chat.id
 
-                    # Fetch messages containing the keywords in the chat
+                    # Поиск сообщений, содержащих ключевые слова в чате
                     for keyword in keywords:
                         async for message in client.search_messages(chat_id, keyword):
-                            # Check if the message date is within the given range
-                            if time_ago <= message.date <= now:
-                                date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
+                            # Проверка, является ли дата сообщения в указанном диапазоне
+                            message_date = message.date.astimezone(pytz.utc)  # Преобразование в offset-aware дату в UTC
 
-                                # Get author info
+                            if time_ago <= message_date <= now:
+                                date_time = message_date.strftime("%Y-%m-%d %H:%M:%S")
+
+                                # Получение информации об авторе
                                 author_name, author_link = await get_author_info(client, message.from_user.id)
+
+                                # Получение ссылки на сообщение
+                                message_link = message.link
 
                                 parsed_message = {
                                     "chat": chat.title,
-                                    "link": link,
+                                    "link": message_link,
                                     "author": author_name,
                                     "author_link": author_link,
                                     "date_time": date_time,
                                     "keywords_used": [keyword],
                                     "message_text": message.text,
                                 }
-                                # Проверяем, что текст сообщения не пустой
+                                # Проверка, что текст сообщения не пустой
                                 if parsed_message["message_text"]:
                                     parsed_messages.append(parsed_message)
 
-                    # Sleep for 2 seconds between iterations
+                    # Ожидание 2 секунды между итерациями
                     await asyncio.sleep(2)
 
                 except Exception as e:
                     if 'database is locked' in str(e):
                         print(
-                            f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{retry_attempts})")
+                            f"База данных заблокирована, повторная попытка через {retry_delay} секунд... (Попытка {attempt + 1}/{retry_attempts})")
                         await asyncio.sleep(retry_delay)
                     else:
-                        print(f"Error processing chat link: {link}")
-                        print(f"Error message: {str(e)}")
+                        print(f"Ошибка при обработке ссылки на чат: {link}")
+                        print(f"Сообщение об ошибке: {str(e)}")
                     continue
-                break  # Exit the retry loop if the operation was successful
+                break  # Выход из цикла повторных попыток в случае успеха
             else:
                 print(
-                    f"Failed to process chat link {link} after {retry_attempts} attempts due to database being locked.")
+                    f"Не удалось обработать ссылку на чат {link} после {retry_attempts} попыток из-за блокировки базы данных.")
     return parsed_messages
 
 
 async def schedule_fetch_and_forward():
     chat_id = '6885411740'
     while True:
-        # Get the current time in the user's timezone (you can adjust the timezone as needed)
-        tz = pytz.timezone('Asia/Bangkok')  # Replace 'Your_Timezone_Here' with the desired timezone
+        # Получение текущего времени в часовом поясе пользователя (при необходимости можно изменить часовой пояс)
+        tz = pytz.timezone('Asia/Bangkok')  # Замените 'Asia/Bangkok' на нужный часовой пояс
         current_time = datetime.datetime.now(tz)
 
-        # Define the times for message fetching and forwarding (adjust the times as needed)
+        # Определение времени для извлечения и пересылки сообщений (при необходимости измените время)
         fetch_times = [datetime.time(8, 0), datetime.time(13, 0), datetime.time(16, 0), datetime.time(18, 0)]
 
         if current_time.time() in fetch_times:
             try:
-                # Call the fetch_messages_from_chats function using await
+                # Вызов функции fetch_messages_from_chats с использованием await
                 parsed_messages = await fetch_messages_from_chats(chat_links, keywords)
 
-                # Send the result to the user
+                # Отправка результата пользователю
                 await send_message_to_user(chat_id, parsed_messages)
             except Exception as e:
-                print(f"Error occurred during scheduled fetch and forward: {str(e)}")
+                print(f"Ошибка во время запланированного извлечения и пересылки: {str(e)}")
 
-        # Sleep for 1 minute to avoid continuous checking
+        # Ожидание 1 минуту для предотвращения непрерывной проверки
         await asyncio.sleep(60)
 
 
@@ -249,7 +333,8 @@ async def send_message_to_user(chat_id, messages):
 async def start_command(message: types.Message):
     keyboard_markup = types.ReplyKeyboardMarkup(row_width=1, resize_keyboard=True)
     buttons = [
-        types.KeyboardButton(text="/fetch_messages"),
+        # types.KeyboardButton(text="/fetch_messages"),
+        types.KeyboardButton(text="/fetch_messages_today"),
         types.KeyboardButton(text="Last 1 hour"),
         types.KeyboardButton(text="Last 2 hours"),
         types.KeyboardButton(text="Last 3 hours"),
@@ -268,10 +353,25 @@ async def start_command(message: types.Message):
 async def fetch_messages_command(message: types.Message):
     try:
         # Add the "Request in progress. Please wait" message here
-        await bot.send_message(message.from_user.id, "Request in progress. Please wait")
+        await bot.send_message(message.from_user.id, "Request in progress. Please wait...")
 
         # Call the fetch_messages_from_chats function using await
         parsed_messages = await fetch_messages_from_chats(chat_links, keywords)
+        # Send the result to the user
+        await send_message_to_user(message.from_user.id, parsed_messages)
+    except Exception as e:
+        await bot.send_message(message.from_user.id, f"Error occurred: {str(e)}")
+
+
+# Handler for the fetch_messages_today command
+@dp.message_handler(commands=['fetch_messages_today'])
+async def fetch_messages_today_command(message: types.Message):
+    try:
+        # Add the "Request in progress. Please wait" message here
+        await bot.send_message(message.from_user.id, "Request in progress. Please wait...")
+
+        # Call the fetch_messages_from_chats function using await
+        parsed_messages = await fetch_messages_from_chats_today(chat_links, keywords)
         # Send the result to the user
         await send_message_to_user(message.from_user.id, parsed_messages)
     except Exception as e:
@@ -295,7 +395,7 @@ async def fetch_messages_by_time_command(message: types.Message):
 async def fetch_and_send_messages(chat_id, hours):
     try:
         # Add the "Request in progress. Please wait" message here
-        await bot.send_message(chat_id, "Request in progress. Please wait")
+        await bot.send_message(chat_id, "Request in progress. Please wait...")
 
         # Call the fetch_messages_from_chats function using await
         parsed_messages = await fetch_messages_from_chats_n(chat_links, keywords, hours)
