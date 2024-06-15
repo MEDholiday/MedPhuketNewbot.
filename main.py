@@ -1,4 +1,6 @@
 # import logging
+import time
+
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
 from config import token, chat_id
@@ -28,20 +30,20 @@ async def get_author_info(client, user_id):
         return None, None
 
 
-async def fetch_messages_from_chats(chat_links, keywords):
+async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retry_delay=2):
     # Create a new Pyrogram client
     client = Client("my_session")
 
     # Log in to the client
     async with client:
-
         parsed_messages = []
-        # Initialize start time
 
-        # Get current date
-        # Get current time and time 12 hours ago
+        # Get current time in UTC and time 12 hours ago
         now = datetime.datetime.now(pytz.utc)
         twelve_hours_ago = now - datetime.timedelta(hours=12)
+
+        print(f"Current UTC time: {now}")
+        print(f"Time 12 hours ago: {twelve_hours_ago}")
 
         # Iterate over each chat link and fetch messages containing keywords
         for link in chat_links:
@@ -50,18 +52,30 @@ async def fetch_messages_from_chats(chat_links, keywords):
                 chat_identifier = link.split("/")[-1]
 
                 # Fetch the chat information
-                try:
-                    chat = await client.get_chat(chat_identifier)
-                except:
+                for attempt in range(retry_attempts):
+                    try:
+                        chat = await client.get_chat(chat_identifier)
+                        break
+                    except Exception as e:
+                        if 'database is locked' in str(e):
+                            print(f"Database is locked, retrying in {retry_delay} seconds...")
+                            time.sleep(retry_delay)
+                        else:
+                            raise e
+                else:
                     print(f"Skipping chat link: {link}. User is not a member of the chat.")
                     continue
+
                 chat_id = chat.id
+
+                print(f"Processing chat: {chat.title}")
 
                 # Fetch messages containing the keywords in the chat
                 for keyword in keywords:
                     async for message in client.search_messages(chat_id, keyword):
                         # Check if the message date is within the last 12 hours
                         if twelve_hours_ago <= message.date <= now:
+                            print(f"Found message with keyword '{keyword}' in chat '{chat.title}'")
                             date_time = message.date.strftime("%Y-%m-%d %H:%M:%S")
 
                             # Get author info
@@ -79,6 +93,10 @@ async def fetch_messages_from_chats(chat_links, keywords):
                             # Проверяем, что текст сообщения не пустой
                             if parsed_message["message_text"]:
                                 parsed_messages.append(parsed_message)
+                            else:
+                                print(f"Message text is empty, skipping message.")
+                        else:
+                            print(f"Message with keyword '{keyword}' is out of the 12-hour range.")
 
                 # Sleep for 2 seconds between iterations
                 await asyncio.sleep(2)
