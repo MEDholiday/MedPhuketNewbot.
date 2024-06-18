@@ -196,9 +196,13 @@ async def fetch_messages_from_chats_n(chat_links, keywords, hours, retry_attempt
     async with client:
         parsed_messages = []
 
-        # Получение текущего времени и времени "hours" часов назад в UTC
-        now = datetime.datetime.now(pytz.utc)
+        # Учет временной зоны пользователя
+        user_tz = pytz.timezone(user_timezone)
+        now = datetime.datetime.now(pytz.utc).astimezone(user_tz)
         time_ago = now - datetime.timedelta(hours=hours)
+
+        print(f"Current time (User TZ): {now}")
+        print(f"Time {hours} hours ago (User TZ): {time_ago}")
 
         # Итерация по каждой ссылке чата и извлечение сообщений, содержащих ключевые слова
         for link in chat_links:
