@@ -199,6 +199,8 @@ async def fetch_messages_from_chats_n(chat_links, keywords, hours, user_timezone
         # Учет временной зоны пользователя
         user_tz = pytz.timezone(user_timezone)
         now = datetime.datetime.now(pytz.utc).astimezone(user_tz)
+        # Добавление 8 часов к текущему времени пользователя
+        now = now + datetime.timedelta(hours=8)
         time_ago = now - datetime.timedelta(hours=hours)
 
         print(f"Current time (User TZ): {now}")
