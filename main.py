@@ -188,7 +188,7 @@ async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retr
 
 
 # Основная функция для извлечения сообщений из чатов за последние n часов
-async def fetch_messages_from_chats_n(chat_links, keywords, hours, retry_attempts=5, retry_delay=2):
+async def fetch_messages_from_chats_n(chat_links, keywords, hours, user_timezone='UTC', retry_attempts=5, retry_delay=2):
     # Создание нового клиента Pyrogram
     client = Client("my_session")
 
