@@ -376,7 +376,7 @@ async def fetch_messages_by_time_command(message: types.Message):
         "Last 24 hours": 24,
     }
     time_range = time_range_map.get(message.text, 12)
-    user_timezone = ''Asia/Bangkok''  # Замените это значение на реальную временную зону пользователя, если она динамическая
+    user_timezone = 'Asia/Bangkok'  # Замените это значение на реальную временную зону пользователя, если она динамическая
     await fetch_and_send_messages(message.from_user.id, time_range, user_timezone)
 
 
