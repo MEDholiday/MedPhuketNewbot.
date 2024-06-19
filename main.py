@@ -189,57 +189,46 @@ async def fetch_messages_from_chats(chat_links, keywords, retry_attempts=5, retr
 
 # Основная функция для извлечения сообщений из чатов за последние n часов
 async def fetch_messages_from_chats_n(chat_links, keywords, hours, user_timezone='UTC', retry_attempts=5, retry_delay=2):
-    # Создание нового клиента Pyrogram
     client = Client("my_session")
 
-    # Вход в систему с использованием клиента
     async with client:
         parsed_messages = []
 
         # Учет временной зоны пользователя
         user_tz = pytz.timezone(user_timezone)
-        now = datetime.datetime.now(pytz.utc).astimezone(user_tz)
-        # Добавление 8 часов к текущему времени пользователя
-        now = now + datetime.timedelta(hours=8)
+        now = datetime.datetime.now(user_tz)  # Получение текущего времени с учетом временной зоны пользователя
         time_ago = now - datetime.timedelta(hours=hours)
 
         print(f"Current time (User TZ): {now}")
         print(f"Time {hours} hours ago (User TZ): {time_ago}")
 
-        # Итерация по каждой ссылке чата и извлечение сообщений, содержащих ключевые слова
         for link in chat_links:
             for attempt in range(retry_attempts):
                 try:
-                    # Извлечение имени пользователя или ID чата из ссылки
                     chat_identifier = link.split("/")[-1]
 
-                    # Получение информации о чате
                     try:
                         chat = await client.get_chat(chat_identifier)
                     except Exception as e:
                         if 'database is locked' in str(e):
-                            print(
-                                f"База данных заблокирована, повторная попытка через {retry_delay} секунд... (Попытка {attempt + 1}/{retry_attempts})")
+                            print(f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}/{retry_attempts})")
                             await asyncio.sleep(retry_delay)
                             continue
                         else:
-                            print(f"Пропуск ссылки на чат: {link}. Пользователь не является участником чата.")
-                            break  # Выход из цикла повторных попыток для этой ссылки чата
+                            print(f"Skipping chat link: {link}. User is not a member of the chat.")
+                            break
+
                     chat_id = chat.id
 
-                    # Поиск сообщений, содержащих ключевые слова в чате
                     for keyword in keywords:
                         async for message in client.search_messages(chat_id, keyword):
-                            # Проверка, является ли дата сообщения в указанном диапазоне
-                            message_date = message.date.astimezone(pytz.utc)  # Преобразование в offset-aware дату в UTC
+                            # Преобразование в временную зону пользователя
+                            message_date = message.date.astimezone(user_tz)
 
                             if time_ago <= message_date <= now:
                                 date_time = message_date.strftime("%Y-%m-%d %H:%M:%S")
 
-                                # Получение информации об авторе
                                 author_name, author_link = await get_author_info(client, message.from_user.id)
-
-                                # Получение ссылки на сообщение
                                 message_link = message.link
 
                                 parsed_message = {
@@ -251,26 +240,24 @@ async def fetch_messages_from_chats_n(chat_links, keywords, hours, user_timezone
                                     "keywords_used": [keyword],
                                     "message_text": message.text,
                                 }
-                                # Проверка, что текст сообщения не пустой
+
                                 if parsed_message["message_text"]:
                                     parsed_messages.append(parsed_message)
 
-                    # Ожидание 2 секунды между итерациями
                     await asyncio.sleep(2)
 
                 except Exception as e:
                     if 'database is locked' in str(e):
-                        print(
-                            f"База данных заблокирована, повторная попытка через {retry_delay} секунд... (Попытка {attempt + 1}/{retry_attempts})")
+                        print(f"Database is locked, retrying in {retry_delay} seconds... (Attempt {attempt + 1}"
+                              f"/{retry_attempts})")
                         await asyncio.sleep(retry_delay)
                     else:
-                        print(f"Ошибка при обработке ссылки на чат: {link}")
-                        print(f"Сообщение об ошибке: {str(e)}")
+                        print(f"Error processing chat link: {link}")
+                        print(f"Error message: {str(e)}")
                     continue
-                break  # Выход из цикла повторных попыток в случае успеха
+                break
             else:
-                print(
-                    f"Не удалось обработать ссылку на чат {link} после {retry_attempts} попыток из-за блокировки базы данных.")
+                print(f"Failed to process chat link {link} after {retry_attempts} attempts due to database lock.")
     return parsed_messages
 
 
@@ -304,11 +291,10 @@ async def send_message_to_user(chat_id, messages):
         await bot.send_message(chat_id, "No messages found.")
         return
 
-    message_chunk_size = 4096  # Maximum message size limit for Telegram
+    message_chunk_size = 4096
 
     message_to_send = "Messages found:\n\n"
     for message in messages:
-        # Форматирование текста ключевых слов
         formatted_keywords = ", ".join([f"<b>{kw}</b>" for kw in message.get("keywords_used", [])])
 
         message_info = (
@@ -320,17 +306,12 @@ async def send_message_to_user(chat_id, messages):
             f"Keywords: {formatted_keywords}\n\n"
         )
 
-        # Check if the chunk size exceeds the limit and split the message if necessary
         if len(message_to_send) + len(message_info) <= message_chunk_size:
             message_to_send += message_info
         else:
-            # Send the current chunk
             await bot.send_message(chat_id, message_to_send, parse_mode="HTML")
-
-            # Start a new chunk
             message_to_send = message_info
 
-    # Send any remaining messages in the last chunk
     await bot.send_message(chat_id, message_to_send, parse_mode="HTML")
 
 
@@ -395,17 +376,14 @@ async def fetch_messages_by_time_command(message: types.Message):
         "Last 24 hours": 24,
     }
     time_range = time_range_map.get(message.text, 12)
-    await fetch_and_send_messages(message.from_user.id, time_range)
+    user_timezone = ''Asia/Bangkok''  # Замените это значение на реальную временную зону пользователя, если она динамическая
+    await fetch_and_send_messages(message.from_user.id, time_range, user_timezone)
 
 
-async def fetch_and_send_messages(chat_id, hours):
+async def fetch_and_send_messages(chat_id, hours, user_timezone):
     try:
-        # Add the "Request in progress. Please wait" message here
         await bot.send_message(chat_id, "Request in progress. Please wait...")
-
-        # Call the fetch_messages_from_chats function using await
-        parsed_messages = await fetch_messages_from_chats_n(chat_links, keywords, hours)
-        # Send the result to the user
+        parsed_messages = await fetch_messages_from_chats_n(chat_links, keywords, hours, user_timezone)
         await send_message_to_user(chat_id, parsed_messages)
     except Exception as e:
         await bot.send_message(chat_id, f"Error occurred: {str(e)}")
@@ -414,10 +392,18 @@ async def fetch_and_send_messages(chat_id, hours):
 # Handler for the "Help" button
 @dp.message_handler(lambda message: message.text == "Help")
 async def help(message: types.Message):
-    await message.answer("Help using the bot:\n"
-                         "1. /start command - start the bot\n"
-                         "2. '/fetch_messages' button - receive messages from chats\n"
-                         "3. 'Help' button - displaying help information")
+    await message.answer(
+        "Help using the bot:\n"
+        "1. /start command - start the bot\n"
+        "2. '/fetch_messages_today' button - receive today's messages from chats\n"
+        "3. 'Last 1 hour' button - receive messages from the last 1 hour\n"
+        "4. 'Last 2 hours' button - receive messages from the last 2 hours\n"
+        "5. 'Last 3 hours' button - receive messages from the last 3 hours\n"
+        "6. 'Last 6 hours' button - receive messages from the last 6 hours\n"
+        "7. 'Last 12 hours' button - receive messages from the last 12 hours\n"
+        "8. 'Last 24 hours' button - receive messages from the last 24 hours\n"
+        "9. 'Help' button - displaying help information"
+    )
 
 
 @dp.message_handler()
