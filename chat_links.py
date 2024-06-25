@@ -4,9 +4,6 @@ chat_links = [
     "https://t.me/phuket_beauty_service",
     "https://t.me/ttb_phuket_women",
     "https://t.me/phuket_crypto_mafia",
-    "https://t.me/+KmvadDL4sF0xNGIy",
-    "https://t.me/+vrgf98MW7p9jODBi",
-    "https://t.me/thai_medicine/",
     "https://t.me/chatik_phuket",
     "https://t.me/the_thailand_chat",
     "https://t.me/pkhuket_barakholka",
@@ -39,14 +36,12 @@ chat_links = [
     "https://t.me/tailand_medicina",
     "https://t.me/Thailand_Go",
     "https://t.me/thairus_live",
-    "https://t.me/+scx2d3pCn25mYTQy",
     "https://t.me/forum_thailand",
     "https://t.me/Phuket_chatBG",
     "https://t.me/phuket_krasota_devyshki",
     "https://t.me/peredelanoconf",
     "https://t.me/gophuket",
     "https://t.me/itphuket",
-    "https://t.me/phuket_chats"
-    "https://t.me/Phuketpar",
+    "https://t.me/phuket_chats",
     "https://t.me/thephuketgroup"
 ]
